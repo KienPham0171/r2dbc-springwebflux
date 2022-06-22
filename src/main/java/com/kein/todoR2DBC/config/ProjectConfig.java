@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.r2dbc.connection.R2dbcTransactionManager;
 import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.concurrent.ConcurrentTaskExecutor;
 import org.springframework.transaction.ReactiveTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.reactive.TransactionalOperator;
@@ -15,11 +17,13 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.sql.SQLException;
+import java.util.concurrent.Executors;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
 @Configuration
 @EnableTransactionManagement
+@EnableAsync
 public class ProjectConfig {
 
     ConnectionFactory connectionFactory() {
@@ -48,54 +52,54 @@ public class ProjectConfig {
     }
 
     public static void main(String[] args) {
-        ConnectionFactory factory= getFactory();
-        Publisher<Connection> connection = (Publisher<Connection>) factory.create();
-        Flux.from(connection).flatMap(
-                conn ->Flux.from(
-                        conn.createStatement("Select * from task")
-                            .execute()  //return Publisher<? extends Result>
-                        )
-                        .flatMap(result-> // Result Obj, flatMap to change Result stream to String stream
-                                result.map(
-                                            (row,metadata)->{
-
-                                                 String name = row.get(0,String.class);
-                                                 String status = row.get(1,String.class);
-
-                                                return String.format(" Name: %s, Status: %s",name,status);
-                                                }
-                                            )
-                                )
-        ).doOnNext(string -> System.err.println(string)).subscribe();
+     ConnectionFactory factory= getFactory();
+         Publisher<Connection> connection = (Publisher<Connection>) factory.create();
 //        Flux.from(connection).flatMap(
-//                conn-> Flux.from(
-//                        conn.createStatement("Insert into task(name,status) values(?,?)")
-//                            .bind(0,"kienpham").bind(1,"completed") //return Statement;
-//                                .execute() //return Publisher<? extend Result>,dua vao Flux de xu ly;
-//                            )
-//                            .flatMap(result        //Result obj has: map(BiFunction<row,metadata,T> bi) va getRowsUpdated()
-//                                    -> result.getRowsUpdated()
-//                            )
-//                )
-//                .subscribe(row -> System.out.println("RowsUpdated: "+row));
+//                conn ->Flux.from(
+//                        conn.createStatement("Select * from task")
+//                            .execute()  //return Publisher<? extends Result>
+//                        )
+//                        .flatMap(result-> // Result Obj, flatMap to change Result stream to String stream
+//                                result.map(
+//                                            (row,metadata)->{
+//
+//                                                 String name = row.get(0,String.class);
+//                                                 String status = row.get(1,String.class);
+//
+//                                                return String.format(" Name: %s, Status: %s",name,status);
+//                                                }
+//                                            )
+//                                )
+//        ).doOnNext(System.err::println).subscribe();
+        Flux.from(connection).flatMap(
+                conn-> Flux.from(
+                        conn.createStatement("Insert into task(name,status) values(?,?)")
+                            .bind(0,"kienpham").bind(1,"completed") //return Statement;
+                                .execute() //return Publisher<? extend Result>,dua vao Flux de xu ly;
+                            )
+                            .flatMap(result        //Result obj has: map(BiFunction<row,metadata,T> bi) va getRowsUpdated()
+                                    -> result.getRowsUpdated()
+                            )
+                )
+                .subscribe(row -> System.out.println("RowsUpdated: "+row));
         ReactiveTransactionManager tm = new R2dbcTransactionManager(factory);
         DatabaseClient db = DatabaseClient.create(factory);
         TransactionalOperator rxtx = TransactionalOperator.create(tm);
 
-        rxtx.transactional(db.sql("update task set name='pham van a' where id = 61")
+        rxtx.transactional(db.sql("update task set name='pham trung kien' where id = 61")
                 .fetch().rowsUpdated()
-                .then(db.sql("update task set name='add some task' where id = 44")
+                .then(db.sql("update task set abc='add some task' where id = 44")
                         .fetch().rowsUpdated().doOnError(err -> System.err.println("loi"))
                         .then())).subscribe();
 
 
-//        db.sql("update task set name='pham van a' where id = 61")
-//                .fetch().rowsUpdated()
-//                .then(db
-//                        .sql("update task set name='add some task 1' where id = 44")
-//                        .fetch().rowsUpdated().doOnError(err -> System.err.println("loi"))
-//                        .then())
-//                .as(thisMono -> rxtx.transactional(thisMono)).subscribe();
+        db.sql("update task set name='pham van a' where id = 61")
+                .fetch().rowsUpdated()
+                .then(db
+                        .sql("update task set name='add some task 1' where id = 44")
+                        .fetch().rowsUpdated().doOnError(err -> System.err.println("loi"))
+                        .then())
+                .as(thisMono -> rxtx.transactional(thisMono)).subscribe();
 
         try {
             Thread.sleep(60*1000);
